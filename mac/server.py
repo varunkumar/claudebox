@@ -208,8 +208,67 @@ def _broadcaster_loop():
         triggered = _broadcast_event.wait(timeout=config.BROADCASTER_DEBOUNCE_S)
         if triggered:
             _broadcast_event.clear()
+
         st = state.read()
-        print(f"[broadcast] mood={st['mood']} sessions={list(st['sessions'].keys())}", flush=True)
+
+        # Pull sensors from K10
+        env = {"temp_c": 0.0, "humidity_pct": 0.0, "light_lux": 0.0}
+        try:
+            resp = urllib.request.urlopen(
+                f"http://{config.K10_IP}:{config.K10_PORT}/sensors",
+                timeout=3
+            )
+            env = json.loads(resp.read())
+        except Exception as e:
+            print(f"[broadcaster] sensor pull failed: {e}", flush=True)
+
+        # Find the active session (matches active_iterm)
+        active_iterm = st.get("active_iterm", "")
+        active_session = {}
+        for sid, sdata in st["sessions"].items():
+            if sdata.get("iterm_id") == active_iterm:
+                active_session = sdata
+                break
+
+        # Compute idle time from last tool use
+        last_tool_ts = active_session.get("last_tool_ts", 0)
+        idle_minutes = (time.time() - last_tool_ts) / 60 if last_tool_ts else 999
+
+        # Compute mood
+        mood_name, mood_score = mood_mod.compute_mood(st["tokens"], idle_minutes)
+
+        # Update mood in state
+        state.update(lambda s: s.update({"mood": mood_name, "mood_score": mood_score}))
+
+        started_at = active_session.get("started_at", int(time.time()))
+        duration_minutes = int((time.time() - started_at) / 60)
+
+        payload = {
+            "session": {
+                "active": bool(st["sessions"]),
+                "model": active_session.get("model", ""),
+                "duration_minutes": duration_minutes,
+                "current_task": active_session.get("current_task", ""),
+                "last_tool": active_session.get("last_tool", ""),
+                "last_file": active_session.get("last_file", ""),
+            },
+            "tokens": st["tokens"],
+            "mood": mood_name,
+            "mood_score": mood_score,
+            "environment": env,
+        }
+
+        try:
+            req = urllib.request.Request(
+                f"http://{config.K10_IP}:{config.K10_PORT}/update",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+            print(f"[broadcaster] pushed mood={mood_name} cost=${st['tokens']['cost_usd']:.3f}", flush=True)
+        except Exception as e:
+            print(f"[broadcaster] push failed: {e}", flush=True)
 
 
 def main():
