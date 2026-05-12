@@ -4,6 +4,36 @@ ClaudeBox is a physical ambient dashboard that displays Claude Code session stat
 
 ## How It Works
 
+```
+Claude Code sessions (iTerm2 tabs)
+        |
+        |  fires hooks via ~/.claude/settings.json
+        v
+hook.py  (thin HTTP client, no state)
+        |
+        |  POST localhost:8081/hook   (non-blocking for most hooks)
+        |  POST localhost:8081/hook   (blocking for PermissionRequest)
+        v
+server.py  (single process, port 8081)
+  |-- HTTP server thread     receives /hook, /focus, /decision
+  |-- Scanner thread         reads JSONL logs every 30s, updates token counts
+  |-- Broadcaster thread     pulls sensors, computes mood, pushes to K10
+  |-- Approval queue         serializes PermissionRequest per session
+  +-- state.json             shared state, thread-safe
+
+focus_monitor.py  (separate process)
+  +-- iTerm2 FocusMonitor    fires on tab switch
+        |  POST localhost:8081/focus
+        v  server.py records which session is active
+
+                        WiFi
+server.py broadcaster <-------> K10 (port 8080)
+  GET  k10:8080/sensors           POST /update   refresh display + RGB LEDs
+  POST k10:8080/update            POST /approve  show Y/N touch UI
+  POST k10:8080/approve           GET  /sensors  return sensor readings
+                                  POST mac:8081/decision  (user tapped Y/N)
+```
+
 Claude Code hooks post events to a Mac daemon (`server.py`) over HTTP. The daemon tracks active sessions, scans JSONL logs for token usage, and pushes status updates to the K10 over WiFi. The K10 renders a dashboard on its display, drives RGB mood LEDs, and hosts an approval UI for Bash commands. iTerm2's FocusMonitor determines which session is "active": only the focused terminal tab routes approval requests to the device.
 
 ## Hardware
