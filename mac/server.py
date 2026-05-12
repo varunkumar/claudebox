@@ -2,6 +2,7 @@ import http.server
 import json
 import os
 import queue
+import socketserver
 import sys
 import threading
 import time
@@ -186,9 +187,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass  # suppress default request logging
 
 
+class _ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+
+
 def make_server(port: int) -> http.server.HTTPServer:
-    server = http.server.HTTPServer(("", port), _Handler)
-    return server
+    return _ThreadingHTTPServer(("", port), _Handler)
 
 
 def _scanner_loop():

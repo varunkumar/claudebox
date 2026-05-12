@@ -1,6 +1,6 @@
 import json
+import socket
 import time
-import urllib.request
 
 try:
     from unihiker import GUI
@@ -13,19 +13,24 @@ from rgb import set_mood, _fill
 
 
 def _post_decision(mac_host: str, mac_port: int, request_id: str, decision: str):
+    body = json.dumps({
+        "request_id": request_id,
+        "decision": decision,
+        "device": "k10",
+    }).encode()
+    req_line = (
+        f"POST /decision HTTP/1.1\r\n"
+        f"Host: {mac_host}\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"Connection: close\r\n\r\n"
+    )
     try:
-        body = json.dumps({
-            "request_id": request_id,
-            "decision": decision,
-            "device": "k10",
-        }).encode()
-        req = urllib.request.Request(
-            f"http://{mac_host}:{mac_port}/decision",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=5)
+        s = socket.socket()
+        s.settimeout(5)
+        s.connect((mac_host, mac_port))
+        s.sendall(req_line.encode() + body)
+        s.close()
     except Exception as e:
         print(f"[approval] failed to send decision: {e}", flush=True)
 
