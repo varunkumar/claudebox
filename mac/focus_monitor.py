@@ -25,8 +25,8 @@ async def main(connection):
         print("[focus_monitor] watching iTerm2 focus changes", flush=True)
         while True:
             update = await monitor.async_get_next_update()
-            if update.selected_session_changed:
-                session_id = update.selected_session_changed.session_id
+            if update.active_session_changed:
+                session_id = update.active_session_changed.session_id
                 print(f"[focus_monitor] active session → {session_id}", flush=True)
                 _notify(session_id)
 

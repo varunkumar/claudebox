@@ -32,7 +32,7 @@ def _post_decision(mac_host: str, mac_port: int, request_id: str, decision: str)
         s.sendall(req_line.encode() + body)
         s.close()
     except Exception as e:
-        print(f"[approval] failed to send decision: {e}", flush=True)
+        print(f"[approval] failed to send decision: {e}")
 
 
 def show_approval(payload: dict, mac_host: str, mac_port: int):
@@ -42,7 +42,7 @@ def show_approval(payload: dict, mac_host: str, mac_port: int):
     countdown  = payload.get("countdown_seconds", 60)
 
     if not _USE_UNIHIKER:
-        print(f"[approval] {tool}: {command} — approve? (auto-deny in {countdown}s)", flush=True)
+        print(f"[approval] {tool}: {command} — approve? (auto-deny in {countdown}s)")
         _post_decision(mac_host, mac_port, request_id, "deny")
         return
 

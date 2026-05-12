@@ -30,18 +30,10 @@ def _fill(color):
 def set_mood(mood: str):
     global _current_mood
     color = _MOOD_COLORS.get(mood, _MOOD_COLORS["neutral"])
-
     if mood != _current_mood:
         _beep()
-
-    _current_mood = mood
-
-    if mood in _BREATHE_MOODS:
-        _breathe_once(color)
-    elif mood in _PULSE_MOODS:
-        _pulse_once(color)
-    else:
-        _fill(color)
+        _current_mood = mood
+    _fill(color)
 
 
 def _breathe_once(color):

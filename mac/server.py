@@ -14,6 +14,7 @@ import config
 import mood as mood_mod
 import scanner
 import state
+import usage as usage_mod
 
 _broadcast_event = threading.Event()
 _pending_approvals: dict = {}
@@ -114,7 +115,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         active_iterm = st.get("active_iterm", "")
         session_iterm = st.get("sessions", {}).get(session_id, {}).get("iterm_id", "")
 
-        if session_iterm != active_iterm or not active_iterm:
+        if not active_iterm or active_iterm not in session_iterm:
             self._respond(200, json.dumps({"behavior": "ask"}).encode())
             return
 
@@ -161,8 +162,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_focus(self, body: dict):
         iterm_id = body.get("iterm_session_id", "")
-        state.update(lambda s: s.update({"active_iterm": iterm_id}))
-        _broadcast_event.set()
+        st = state.read()
+        has_session = any(
+            iterm_id in sdata.get("iterm_id", "")
+            for sdata in st["sessions"].values()
+        )
+        if has_session:
+            state.update(lambda s: s.update({"active_iterm": iterm_id}))
+            _broadcast_event.set()
         self._respond(200, b"")
 
     def _handle_decision(self, body: dict):
@@ -195,19 +202,37 @@ def make_server(port: int) -> http.server.HTTPServer:
     return _ThreadingHTTPServer(("", port), _Handler)
 
 
+_USAGE_FETCH_INTERVAL_S = 1800
+_last_usage_fetch_ts = 0.0
+
+
 def _scanner_loop():
+    global _last_usage_fetch_ts
     while True:
         time.sleep(config.SCANNER_INTERVAL_S)
         st = state.read()
         session_ids = set(st["sessions"].keys())
-        if not session_ids:
-            continue
-        tokens = scanner.scan_sessions(config.LOG_DIR, session_ids)
-        state.update(lambda s: s.update({"tokens": tokens}))
+        if session_ids:
+            tokens = scanner.scan_sessions(config.LOG_DIR, session_ids)
+            state.update(lambda s: s.update({"tokens": tokens}))
+        now = time.time()
+        if now - _last_usage_fetch_ts >= _USAGE_FETCH_INTERVAL_S:
+            usage = usage_mod.fetch_usage()
+            if usage is not None:
+                state.update(lambda s: s.update({
+                    "five_hour_pct": usage["five_hour_pct"],
+                    "weekly_pct": usage["seven_day_pct"],
+                }))
+            _last_usage_fetch_ts = now
         _broadcast_event.set()
 
 
+_MIN_PUSH_INTERVAL_S = 5
+_last_push_ts = 0.0
+
+
 def _broadcaster_loop():
+    global _last_push_ts
     while True:
         triggered = _broadcast_event.wait(timeout=config.BROADCASTER_DEBOUNCE_S)
         if triggered:
@@ -219,22 +244,18 @@ def _broadcaster_loop():
         if not triggered and not st.get("sessions"):
             continue
 
-        # Pull sensors from K10
+        # Rate-limit: don't push to K10 faster than _MIN_PUSH_INTERVAL_S
+        now = time.time()
+        if now - _last_push_ts < _MIN_PUSH_INTERVAL_S:
+            continue
+
         env = {"temp_c": 0.0, "humidity_pct": 0.0, "light_lux": 0.0}
-        try:
-            resp = urllib.request.urlopen(
-                f"http://{config.K10_IP}:{config.K10_PORT}/sensors",
-                timeout=3
-            )
-            env = json.loads(resp.read())
-        except Exception as e:
-            print(f"[broadcaster] sensor pull failed: {e}", flush=True)
 
         # Find the active session (matches active_iterm)
         active_iterm = st.get("active_iterm", "")
         active_session = {}
         for sid, sdata in st["sessions"].items():
-            if sdata.get("iterm_id") == active_iterm:
+            if active_iterm and active_iterm in sdata.get("iterm_id", ""):
                 active_session = sdata
                 break
 
@@ -261,8 +282,11 @@ def _broadcaster_loop():
                 "last_file": active_session.get("last_file", ""),
             },
             "tokens": st["tokens"],
+            "five_hour_pct": st.get("five_hour_pct", 0.0),
+            "weekly_pct": st.get("weekly_pct", 0.0),
             "mood": mood_name,
             "mood_score": mood_score,
+            "context_pct": st["tokens"].get("context_pct", 0.0),
             "environment": env,
         }
 
@@ -273,10 +297,11 @@ def _broadcaster_loop():
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=5)
-            print(f"[broadcaster] pushed mood={mood_name} cost=${st['tokens']['cost_usd']:.3f}", flush=True)
+            urllib.request.urlopen(req, timeout=15)
+            _last_push_ts = time.time()
+            print(f"[broadcaster] pushed mood={mood_name} 5h={st.get('five_hour_pct', 0.0):.0%} week={st.get('weekly_pct', 0.0):.0%}", flush=True)
         except Exception as e:
-            print(f"[broadcaster] push failed: {e}", flush=True)
+            print(f"[broadcaster] push failed {config.K10_IP}:{config.K10_PORT}: {e}", flush=True)
 
 
 def main():
