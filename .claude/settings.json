@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PermissionRequest": [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py", "timeout": 65}]}],
+    "SessionStart":      [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}],
+    "UserPromptSubmit":  [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}],
+    "PostToolUse":       [{"matcher": "*", "hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}],
+    "Stop":              [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}],
+    "Notification":      [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}],
+    "SessionEnd":        [{"hooks": [{"type": "command", "command": "python3 ~/.claudebox/hook.py"}]}]
+  }
+}
