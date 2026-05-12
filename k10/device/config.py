@@ -1,0 +1,3 @@
+MAC_HOST  = "192.168.x.x"   # your Mac's IP on local network
+MAC_PORT  = 8081
+HTTP_PORT = 8080
