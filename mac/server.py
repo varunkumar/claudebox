@@ -215,6 +215,10 @@ def _broadcaster_loop():
 
         st = state.read()
 
+        # Skip poll when nothing is active and nothing triggered
+        if not triggered and not st.get("sessions"):
+            continue
+
         # Pull sensors from K10
         env = {"temp_c": 0.0, "humidity_pct": 0.0, "light_lux": 0.0}
         try:

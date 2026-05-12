@@ -1,103 +1,126 @@
 # ClaudeBox
 
-ClaudeBox is a physical ambient dashboard that displays Claude Code session status on a UNIHIKER K10 device sitting on your desk. It provides real-time feedback on session activity, token usage, and mood via an e-ink display, RGB lights, and environmental sensors.
+ClaudeBox is a physical ambient dashboard that displays Claude Code session status on a UNIHIKER K10 sitting on your desk. It shows real-time session activity, token usage, mood via RGB LEDs, environmental sensor data, and lets you approve or deny Bash commands with a physical touch UI.
 
-## Features
+## How It Works
 
-- **Session Status** - Real-time Claude Code activity and state
-- **Token Usage** - Track input/output tokens and session burn-down
-- **Mood Indicator** - Visual feedback based on session performance and token usage
-- **Environmental Sensors** - Temperature and ambient light sensing
-- **Physical Approval Gate** - Approve Bash commands via touch UI on the K10 display
-- **Status Broadcasting** - HTTP server pushes updates from your Mac to the K10
+Claude Code hooks post events to a Mac daemon (`server.py`) over HTTP. The daemon tracks active sessions, scans JSONL logs for token usage, and pushes status updates to the K10 over WiFi. The K10 renders a dashboard on its display, drives RGB mood LEDs, and hosts an approval UI for Bash commands. iTerm2's FocusMonitor determines which session is "active" — only the focused terminal tab routes approval requests to the device.
 
 ## Hardware
 
 **Required:**
-- UNIHIKER K10 (e-ink display + WiFi + sensors)
+- UNIHIKER K10 (touch display, WiFi, AHT20 temp/humidity, LTR303 light sensor, WS2812 LEDs)
 
 **Coming soon:**
 - Cardputer Adv
 
 ## Setup
 
-### Mac Setup
+### 1. Router
 
-1. **Configure the project:**
-   ```bash
-   cp config.example.py mac/config.py
-   ```
-   Edit `mac/config.py` and set `K10_IP` to your K10's IP address.
+Give the K10 a static IP via DHCP reservation in your router settings. You'll need this IP in the next step.
 
-2. **Install the hook:**
-   ```bash
-   mkdir -p ~/.claudebox
-   cp hook.py ~/.claudebox/hook.py
-   ```
+### 2. Mac — configuration
 
-3. **Install iTerm2 Python runtime:**
-   Open iTerm2 → Scripts menu → Manage → Install Python Runtime
+```bash
+cp config.example.py mac/config.py
+```
 
-4. **Start the Mac server:**
-   ```bash
-   python3 mac/server.py
-   ```
-   This HTTP server monitors Claude Code sessions and broadcasts updates to the K10.
+Edit `mac/config.py`:
+- Set `K10_IP` to the K10's static IP
+- Adjust `APPROVAL_REQUIRED` / `AUTO_ALLOW` tool lists as needed
 
-5. **Start the focus monitor:**
-   ```bash
-   python3 mac/focus_monitor.py
-   ```
-   This watches iTerm2 focus changes and reports them to the server.
+`mac/config.py` is gitignored — never commit credentials or IPs.
 
-### K10 Setup
+### 3. Mac — hook
 
-1. **Flash MicroPython firmware:**
-   Follow the [UNIHIKER K10 documentation](https://wiki.unihiker.com) to install MicroPython.
+```bash
+mkdir -p ~/.claudebox
+cp hook.py ~/.claudebox/hook.py
+```
 
-2. **Configure WiFi credentials:**
-   ```bash
-   cp k10/device/secrets_example.py k10/device/secrets.py
-   ```
-   Edit `k10/device/secrets.py` and add your WiFi SSID and password.
+Copy `.claude/settings.json` to `~/.claude/settings.json` (or merge the `hooks` block if you have an existing settings file). This wires up Claude Code to call the hook on every session event.
 
-3. **Configure the Mac host:**
-   Edit `k10/device/config.py` and set `MAC_HOST` to your Mac's IP address.
+### 4. Mac — iTerm2 focus monitor
 
-4. **Sync to device:**
-   Use the Pymakr VS Code extension to sync `k10/device/` files to the K10.
+Open iTerm2 → Scripts menu → Manage → Install Python Runtime (one-time).
 
-### Router
+The focus monitor tracks which terminal tab is active so the approval gate routes to the right session.
 
-Set a static IP for the K10 via DHCP reservation in your router settings. Use this IP as `K10_IP` in `mac/config.py`.
+### 5. K10 — firmware
+
+Flash MicroPython onto the K10 following the [UNIHIKER K10 documentation](https://wiki.unihiker.com).
+
+### 6. K10 — configuration
+
+```bash
+cp k10/device/secrets_example.py k10/device/secrets.py
+```
+
+Edit `k10/device/secrets.py` with your WiFi SSID and password.
+
+Edit `k10/device/config.py` and set `MAC_HOST` to your Mac's local IP address.
+
+`secrets.py` is gitignored — never commit WiFi credentials.
+
+### 7. K10 — deploy
+
+Sync the `k10/device/` directory to the K10 using the Pymakr VS Code extension or `mpremote`.
 
 ## Running
 
-Start the two Mac daemons in separate terminal windows:
+Start both Mac daemons (separate terminal windows):
 
 ```bash
-# Terminal 1
+# Terminal 1 — main server
 python3 mac/server.py
 
-# Terminal 2
+# Terminal 2 — iTerm2 focus tracker
 python3 mac/focus_monitor.py
 ```
 
-The K10 will boot automatically and connect to the Mac via WiFi. Session status will appear on the display.
+The K10 boots automatically and connects to the Mac. Session status appears on the display within a few seconds of starting a Claude Code session.
 
 ## Approval Gate
 
-When a Bash command requires approval, a full-screen prompt appears on the K10 display asking for Y/N confirmation via touch input. Tap the on-screen buttons to approve or deny the command.
+When Claude Code requests permission to run a Bash command, a full-screen prompt appears on the K10 with a countdown timer. Tap **YES** or **NO** on the touch display. If no response within 60 seconds, the command falls back to Claude Code's built-in CLI approval prompt.
 
-## Tuning
+Only the iTerm2 tab that currently has focus routes to the device. Background sessions always fall back to the CLI prompt immediately.
 
-Adjust mood thresholds by editing `SESSION_TYPICAL_MAX` in `mac/config.py`. This controls how the mood indicator responds to token usage and session performance.
+## Mood System
+
+RGB LEDs reflect session intensity based on cumulative token usage:
+
+| Mood     | Color  | Condition                          |
+|----------|--------|------------------------------------|
+| sleeping | off    | No active session / idle >10 min   |
+| happy    | green  | <20% of session budget used        |
+| neutral  | blue   | 20–50%                             |
+| tired    | yellow | 50–75%                             |
+| stressed | red    | >75%                               |
+
+Tune `SESSION_TYPICAL_MAX` in `mac/config.py` to calibrate the thresholds to your typical session size.
 
 ## Project Layout
 
-- `mac/` - Mac daemon code (server, scanner, focus monitor)
-- `k10/device/` - K10 MicroPython code (display, sensors, networking)
-- `hook.py` - Claude Code hook installed to `~/.claudebox/`
-- `config.example.py` - Configuration template
-- `tests/` - Test suite (Mac side only)
-- `docs/` - Design specs and implementation plans
+```
+mac/           Mac daemon: server, scanner, mood, focus monitor
+k10/device/    K10 MicroPython firmware: display, sensors, RGB, approval
+hook.py        Claude Code hook (install to ~/.claudebox/)
+config.example.py  Config template (copy to mac/config.py)
+.claude/settings.json  Hook wiring for Claude Code
+tests/         Mac-side test suite (pytest)
+docs/          Design specs and implementation plans
+```
+
+## Development
+
+```bash
+# Run tests
+python -m pytest tests/ -v
+
+# Tests cover: state persistence, token scanning, mood thresholds,
+# hook ingestion, broadcaster, and full approval round-trips.
+```
+
+K10 firmware is MicroPython — it has no CPython test suite. Validate sensor reads and display layout on the device directly.

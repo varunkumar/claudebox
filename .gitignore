@@ -1,2 +1,5 @@
 mac/config.py
 k10/device/secrets.py
+__pycache__/
+*.pyc
+.pytest_cache/

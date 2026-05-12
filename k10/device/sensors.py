@@ -8,6 +8,17 @@ _AHT20_ADDR  = 0x38
 _LTR303_ADDR = 0x29
 
 
+def _aht20_init():
+    try:
+        time.sleep_ms(40)  # power-on stabilization
+        status = _i2c.readfrom(_AHT20_ADDR, 1)[0]
+        if not (status & 0x08):  # calibration bit not set
+            _i2c.writeto(_AHT20_ADDR, bytes([0xBE, 0x08, 0x00]))
+            time.sleep_ms(10)
+    except Exception:
+        pass
+
+
 def _aht20_read():
     _i2c.writeto(_AHT20_ADDR, bytes([0xAC, 0x33, 0x00]))
     time.sleep_ms(80)
@@ -38,6 +49,7 @@ def _ltr303_read():
         return 0.0
 
 
+_aht20_init()
 _ltr303_init()
 
 
