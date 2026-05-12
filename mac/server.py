@@ -88,13 +88,75 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         iterm_id   = body.get("_iterm_session_id", "")
 
         if hook_type == "PermissionRequest":
-            # Approval flow — implemented in Task 9
-            self._respond(200, json.dumps({"behavior": "ask"}).encode())
+            self._handle_permission_request(body, session_id, iterm_id)
             return
 
         _update_from_hook(hook_type, session_id, iterm_id, body)
         _broadcast_event.set()
         self._respond(200, b"")
+
+    def _handle_permission_request(self, body: dict, session_id: str, iterm_id: str):
+        tool = body.get("tool_name", "")
+
+        # Tools on the auto-allow list never need approval
+        if tool in config.AUTO_ALLOW:
+            self._respond(200, json.dumps({"behavior": "allow"}).encode())
+            return
+
+        # Tools not in APPROVAL_REQUIRED pass through
+        if tool not in config.APPROVAL_REQUIRED:
+            self._respond(200, json.dumps({"behavior": "allow"}).encode())
+            return
+
+        # Check if this is the active iTerm2 session
+        st = state.read()
+        active_iterm = st.get("active_iterm", "")
+        session_iterm = st.get("sessions", {}).get(session_id, {}).get("iterm_id", "")
+
+        if session_iterm != active_iterm or not active_iterm:
+            self._respond(200, json.dumps({"behavior": "ask"}).encode())
+            return
+
+        # Active session — route to K10
+        request_id = str(uuid.uuid4())
+        response_q: queue.Queue = queue.Queue()
+
+        with _approval_lock:
+            _pending_approvals[request_id] = response_q
+
+        approve_payload = {
+            "request_id": request_id,
+            "tool": tool,
+            "command": body.get("tool_input", {}).get("command", "")
+                       or body.get("tool_input", {}).get("path", ""),
+            "countdown_seconds": config.APPROVAL_TIMEOUT_S,
+        }
+
+        try:
+            req = urllib.request.Request(
+                f"http://{config.K10_IP}:{config.K10_PORT}/approve",
+                data=json.dumps(approve_payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            print(f"[approval] K10 unreachable: {e}", flush=True)
+            with _approval_lock:
+                _pending_approvals.pop(request_id, None)
+            self._respond(200, json.dumps({"behavior": "ask"}).encode())
+            return
+
+        try:
+            decision = response_q.get(timeout=config.APPROVAL_TIMEOUT_S)
+            behavior = "allow" if decision in ("allow", "always_allow") else "deny"
+        except queue.Empty:
+            behavior = "ask"
+        finally:
+            with _approval_lock:
+                _pending_approvals.pop(request_id, None)
+
+        self._respond(200, json.dumps({"behavior": behavior}).encode())
 
     def _handle_focus(self, body: dict):
         iterm_id = body.get("iterm_session_id", "")
@@ -103,7 +165,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._respond(200, b"")
 
     def _handle_decision(self, body: dict):
-        # Approval flow — implemented in Task 9
+        request_id = body.get("request_id", "")
+        decision   = body.get("decision", "deny")
+        with _approval_lock:
+            q = _pending_approvals.get(request_id)
+        if q:
+            q.put(decision)
         self._respond(200, b"")
 
     def _respond(self, code: int, body: bytes):
