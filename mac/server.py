@@ -11,6 +11,7 @@ import uuid
 sys.path.insert(0, os.path.dirname(__file__))
 import config
 import mood as mood_mod
+import scanner
 import state
 
 _broadcast_event = threading.Event()
@@ -123,6 +124,18 @@ def make_server(port: int) -> http.server.HTTPServer:
     return server
 
 
+def _scanner_loop():
+    while True:
+        time.sleep(config.SCANNER_INTERVAL_S)
+        st = state.read()
+        session_ids = set(st["sessions"].keys())
+        if not session_ids:
+            continue
+        tokens = scanner.scan_sessions(config.LOG_DIR, session_ids)
+        state.update(lambda s: s.update({"tokens": tokens}))
+        _broadcast_event.set()
+
+
 def _broadcaster_loop():
     while True:
         triggered = _broadcast_event.wait(timeout=config.BROADCASTER_DEBOUNCE_S)
@@ -134,6 +147,7 @@ def _broadcaster_loop():
 
 def main():
     srv = make_server(config.MAC_PORT)
+    threading.Thread(target=_scanner_loop, daemon=True).start()
     threading.Thread(target=_broadcaster_loop, daemon=True).start()
     print(f"[server] listening on port {config.MAC_PORT}", flush=True)
     srv.serve_forever()
