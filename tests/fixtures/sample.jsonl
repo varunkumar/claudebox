@@ -1,0 +1,4 @@
+{"session_id": "session-aaa", "message": {"model": "claude-sonnet-4-6", "usage": {"input_tokens": 1000, "output_tokens": 200, "cache_creation_input_tokens": 500, "cache_read_input_tokens": 300}}}
+{"session_id": "session-aaa", "message": {"model": "claude-sonnet-4-6", "usage": {"input_tokens": 2000, "output_tokens": 400, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 1000}}}
+{"session_id": "session-bbb", "message": {"model": "claude-opus-4-6", "usage": {"input_tokens": 500, "output_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
+{"session_id": "session-ignored", "message": {"model": "claude-sonnet-4-6", "usage": {"input_tokens": 9999, "output_tokens": 9999, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
