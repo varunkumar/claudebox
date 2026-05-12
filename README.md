@@ -79,7 +79,33 @@ The focus monitor tracks which terminal tab is active so the approval gate route
 
 ### 5. K10: Firmware
 
-Flash MicroPython onto the K10 following the [UNIHIKER K10 documentation](https://wiki.unihiker.com).
+Install esptool:
+
+```bash
+pip install esptool
+```
+
+Back up the factory firmware (optional but recommended):
+
+```bash
+esptool.py --port /dev/tty.usbmodem83301 \
+           --baud 921600 \
+           read_flash 0x0 0x1000000 k10_factory_backup.bin
+```
+
+Erase flash, then write the MicroPython image:
+
+```bash
+esptool.py --port /dev/tty.usbmodem83301 \
+           --baud 921600 \
+           erase_flash
+
+esptool.py --port /dev/tty.usbmodem83301 \
+           --baud 921600 \
+           write_flash -z 0x0 unihiker_k10_micropython.bin
+```
+
+The port name (`/dev/tty.usbmodem83301`) varies - check `ls /dev/tty.usbmodem*` after plugging in the K10 via USB. Download the MicroPython `.bin` for the K10 from the [UNIHIKER K10 documentation](https://wiki.unihiker.com).
 
 ### 6. K10: Configuration
 
