@@ -4,7 +4,7 @@ ClaudeBox is a physical ambient dashboard that displays Claude Code session stat
 
 ## How It Works
 
-Claude Code hooks post events to a Mac daemon (`server.py`) over HTTP. The daemon tracks active sessions, scans JSONL logs for token usage, and pushes status updates to the K10 over WiFi. The K10 renders a dashboard on its display, drives RGB mood LEDs, and hosts an approval UI for Bash commands. iTerm2's FocusMonitor determines which session is "active" — only the focused terminal tab routes approval requests to the device.
+Claude Code hooks post events to a Mac daemon (`server.py`) over HTTP. The daemon tracks active sessions, scans JSONL logs for token usage, and pushes status updates to the K10 over WiFi. The K10 renders a dashboard on its display, drives RGB mood LEDs, and hosts an approval UI for Bash commands. iTerm2's FocusMonitor determines which session is "active": only the focused terminal tab routes approval requests to the device.
 
 ## Hardware
 
@@ -20,7 +20,7 @@ Claude Code hooks post events to a Mac daemon (`server.py`) over HTTP. The daemo
 
 Give the K10 a static IP via DHCP reservation in your router settings. You'll need this IP in the next step.
 
-### 2. Mac — configuration
+### 2. Mac: Configuration
 
 ```bash
 cp config.example.py mac/config.py
@@ -30,9 +30,9 @@ Edit `mac/config.py`:
 - Set `K10_IP` to the K10's static IP
 - Adjust `APPROVAL_REQUIRED` / `AUTO_ALLOW` tool lists as needed
 
-`mac/config.py` is gitignored — never commit credentials or IPs.
+`mac/config.py` is gitignored. Never commit credentials or IPs.
 
-### 3. Mac — hook
+### 3. Mac: Hook
 
 ```bash
 mkdir -p ~/.claudebox
@@ -41,17 +41,17 @@ cp hook.py ~/.claudebox/hook.py
 
 Copy `.claude/settings.json` to `~/.claude/settings.json` (or merge the `hooks` block if you have an existing settings file). This wires up Claude Code to call the hook on every session event.
 
-### 4. Mac — iTerm2 focus monitor
+### 4. Mac: iTerm2 Focus Monitor
 
-Open iTerm2 → Scripts menu → Manage → Install Python Runtime (one-time).
+Open iTerm2 > Scripts menu > Manage > Install Python Runtime (one-time).
 
 The focus monitor tracks which terminal tab is active so the approval gate routes to the right session.
 
-### 5. K10 — firmware
+### 5. K10: Firmware
 
 Flash MicroPython onto the K10 following the [UNIHIKER K10 documentation](https://wiki.unihiker.com).
 
-### 6. K10 — configuration
+### 6. K10: Configuration
 
 ```bash
 cp k10/device/secrets_example.py k10/device/secrets.py
@@ -61,9 +61,9 @@ Edit `k10/device/secrets.py` with your WiFi SSID and password.
 
 Edit `k10/device/config.py` and set `MAC_HOST` to your Mac's local IP address.
 
-`secrets.py` is gitignored — never commit WiFi credentials.
+`secrets.py` is gitignored. Never commit WiFi credentials.
 
-### 7. K10 — deploy
+### 7. K10: Deploy
 
 Sync the `k10/device/` directory to the K10 using the Pymakr VS Code extension or `mpremote`.
 
@@ -72,10 +72,10 @@ Sync the `k10/device/` directory to the K10 using the Pymakr VS Code extension o
 Start both Mac daemons (separate terminal windows):
 
 ```bash
-# Terminal 1 — main server
+# Terminal 1: main server
 python3 mac/server.py
 
-# Terminal 2 — iTerm2 focus tracker
+# Terminal 2: iTerm2 focus tracker
 python3 mac/focus_monitor.py
 ```
 
@@ -95,8 +95,8 @@ RGB LEDs reflect session intensity based on cumulative token usage:
 |----------|--------|------------------------------------|
 | sleeping | off    | No active session / idle >10 min   |
 | happy    | green  | <20% of session budget used        |
-| neutral  | blue   | 20–50%                             |
-| tired    | yellow | 50–75%                             |
+| neutral  | blue   | 20-50%                             |
+| tired    | yellow | 50-75%                             |
 | stressed | red    | >75%                               |
 
 Tune `SESSION_TYPICAL_MAX` in `mac/config.py` to calibrate the thresholds to your typical session size.
@@ -123,4 +123,4 @@ python -m pytest tests/ -v
 # hook ingestion, broadcaster, and full approval round-trips.
 ```
 
-K10 firmware is MicroPython — it has no CPython test suite. Validate sensor reads and display layout on the device directly.
+K10 firmware is MicroPython with no CPython test suite. Validate sensor reads and display layout on the device directly.
