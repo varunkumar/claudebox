@@ -33,6 +33,13 @@ def connect_wifi():
             if wlan.isconnected():
                 break
             time.sleep(1)
+    if wlan.isconnected():
+        try:
+            import ntptime
+            ntptime.settime()
+            print("[k10] NTP sync ok")
+        except Exception as e:
+            print(f"[k10] NTP sync failed: {e}")
     return wlan.isconnected(), wlan.ifconfig()[0]
 
 
@@ -120,47 +127,74 @@ def handle_request(conn):
 
 
 def do_render():
-    global _last_render_ts
+    global _last_render_ts, _needs_render
     now = time.time()
     if now - _last_render_ts < _RENDER_MIN_INTERVAL:
+        _needs_render = True  # keep flag so we retry after interval passes
         return
     _last_render_ts = now
+    env = _state.get("environment", {})
+    print(f"[k10] render env={env}")
     gc.collect()
     try:
         from display import render
         render(_state)
     except Exception as e:
         print(f"[k10] render error: {e}")
+    try:
+        from rgb import set_mood
+        set_mood(_state["mood"])
+    except Exception as e:
+        print(f"[k10] mood error: {e}")
     gc.collect()
-    # rgb disabled — NeoPixel(Pin(48)) conflicts with screen SPI
 
 
 def start_server():
-    global _needs_render
+    global _needs_render, _last_sensor_ts
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("", config.HTTP_PORT))
+    for attempt in range(10):
+        try:
+            s.bind(("", config.HTTP_PORT))
+            break
+        except OSError:
+            print(f"[k10] port busy, waiting... ({attempt+1})")
+            time.sleep(3)
+    else:
+        s.close()
+        raise OSError("port still busy after retries")
     s.listen(5)
     s.settimeout(5)
     print(f"[k10] HTTP server on port {config.HTTP_PORT}")
 
-    while True:
-        try:
-            conn, addr = s.accept()
+    try:
+        while True:
             try:
-                handle_request(conn)
-            finally:
-                conn.close()
-        except OSError:
-            pass
-        except Exception as e:
-            print(f"[k10] request error: {e}")
+                conn, addr = s.accept()
+                try:
+                    handle_request(conn)
+                finally:
+                    conn.close()
+            except OSError:
+                pass
+            except Exception as e:
+                print(f"[k10] request error: {e}")
 
-        if _needs_render:
-            _needs_render = False
-            do_render()
+            if _needs_render:
+                _needs_render = False
+                do_render()
 
-        # sensors disabled — k10_base timer interferes with sockets
+            now = time.time()
+            if now - _last_sensor_ts >= _SENSOR_INTERVAL:
+                _last_sensor_ts = now
+                try:
+                    from sensors import read_sensors
+                    _state["environment"] = read_sensors()
+                    _needs_render = True
+                except Exception as e:
+                    print(f"[k10] sensor error: {e}")
+    finally:
+        s.close()
 
 
 def boot():
