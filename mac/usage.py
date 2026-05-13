@@ -21,7 +21,7 @@ def _get_access_token() -> str:
 _backoff_until: float = 0.0
 
 
-def fetch_usage() -> dict | None:
+def fetch_usage():
     """Return {'five_hour_pct': float, 'seven_day_pct': float}, or None if rate-limited."""
     import time
     global _backoff_until

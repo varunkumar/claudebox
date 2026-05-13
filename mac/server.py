@@ -249,8 +249,6 @@ def _broadcaster_loop():
         if now - _last_push_ts < _MIN_PUSH_INTERVAL_S:
             continue
 
-        env = {"temp_c": 0.0, "humidity_pct": 0.0, "light_lux": 0.0}
-
         # Find the active session (matches active_iterm)
         active_iterm = st.get("active_iterm", "")
         active_session = {}
@@ -287,7 +285,6 @@ def _broadcaster_loop():
             "mood": mood_name,
             "mood_score": mood_score,
             "context_pct": st["tokens"].get("context_pct", 0.0),
-            "environment": env,
         }
 
         try:
@@ -297,7 +294,7 @@ def _broadcaster_loop():
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=15)
+            urllib.request.urlopen(req, timeout=8)
             _last_push_ts = time.time()
             print(f"[broadcaster] pushed mood={mood_name} 5h={st.get('five_hour_pct', 0.0):.0%} week={st.get('weekly_pct', 0.0):.0%}", flush=True)
         except Exception as e:
