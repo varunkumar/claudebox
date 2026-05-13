@@ -115,7 +115,9 @@ cp k10/device/secrets_example.py k10/device/secrets.py
 
 Edit `k10/device/secrets.py` with your WiFi SSID and password.
 
-Edit `k10/device/config.py` and set `MAC_HOST` to your Mac's local IP address.
+Edit `k10/device/config.py`:
+- Set `MAC_HOST` to your Mac's local IP address.
+- Set `TZ_OFFSET_S` to your UTC offset in seconds (e.g. IST = `19800` for UTC+5:30, EST = `-18000` for UTC-5). This is applied to the UTC clock synced from NTP on boot.
 
 `secrets.py` is gitignored. Never commit WiFi credentials.
 
@@ -147,15 +149,29 @@ Only the iTerm2 tab that currently has focus routes to the device. Background se
 
 RGB LEDs reflect session intensity based on cumulative token usage:
 
-| Mood     | Color  | Condition                          |
-|----------|--------|------------------------------------|
-| sleeping | off    | No active session / idle >10 min   |
-| happy    | green  | <20% of session budget used        |
-| neutral  | blue   | 20-50%                             |
-| tired    | yellow | 50-75%                             |
-| stressed | red    | >75%                               |
+| Mood     | LED color  | Condition                         |
+|----------|------------|-----------------------------------|
+| sleeping | dim white  | No active session / idle >10 min  |
+| happy    | green      | <20% of session budget used       |
+| neutral  | blue       | 20-50%                            |
+| tired    | amber      | 50-75%                            |
+| stressed | red        | >75%                              |
 
 Tune `SESSION_TYPICAL_MAX` in `mac/config.py` to calibrate the thresholds to your typical session size.
+
+## Usage Bars
+
+The display shows two progress bars for API rate-limit headroom. Both bars shift color as usage climbs:
+
+| Range  | Color  |
+|--------|--------|
+| 0-30%  | Green  |
+| 30-60% | Yellow |
+| 60-90% | Orange |
+| 90%+   | Red    |
+
+- **Session bar** - 5-hour rolling usage window
+- **Week bar** - 7-day rolling usage window
 
 ## Project Layout
 
