@@ -1,3 +1,8 @@
+import usage as usage_mod
+import state
+import scanner
+import mood as mood_mod
+import config
 import http.server
 import json
 import os
@@ -10,11 +15,6 @@ import urllib.request
 import uuid
 
 sys.path.insert(0, os.path.dirname(__file__))
-import config
-import mood as mood_mod
-import scanner
-import state
-import usage as usage_mod
 
 _broadcast_event = threading.Event()
 _pending_approvals: dict = {}
@@ -85,9 +85,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._respond(404, b"")
 
     def _handle_hook(self, body: dict):
-        hook_type  = body.get("hook_event_name", "")
+        hook_type = body.get("hook_event_name", "")
         session_id = body.get("session_id", "")
-        iterm_id   = body.get("_iterm_session_id", "")
+        iterm_id = body.get("_iterm_session_id", "")
 
         if hook_type == "PermissionRequest":
             self._handle_permission_request(body, session_id, iterm_id)
@@ -99,6 +99,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_permission_request(self, body: dict, session_id: str, iterm_id: str):
         tool = body.get("tool_name", "")
+        print(
+            f"[approval] PermissionRequest tool={tool} session={session_id[:8]} iterm={iterm_id[:16]}", flush=True)
 
         # Tools on the auto-allow list never need approval
         if tool in config.AUTO_ALLOW:
@@ -113,15 +115,21 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         # Check if this is the active iTerm2 session
         st = state.read()
         active_iterm = st.get("active_iterm", "")
-        session_iterm = st.get("sessions", {}).get(session_id, {}).get("iterm_id", "")
+        session_iterm = st.get("sessions", {}).get(
+            session_id, {}).get("iterm_id", "")
+        print(
+            f"[approval] active_iterm={active_iterm[:16]} session_iterm={session_iterm[:24]} match={active_iterm and active_iterm in session_iterm}", flush=True)
 
         if not active_iterm or active_iterm not in session_iterm:
+            print("[approval] session mismatch → ask", flush=True)
             self._respond(200, json.dumps({"behavior": "ask"}).encode())
             return
 
         # Active session — route to K10
         request_id = str(uuid.uuid4())
         response_q: queue.Queue = queue.Queue()
+        print(
+            f"[approval] routing request_id={request_id} tool={tool} session={session_id[:8]}", flush=True)
 
         with _approval_lock:
             _pending_approvals[request_id] = response_q
@@ -130,7 +138,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "request_id": request_id,
             "tool": tool,
             "command": body.get("tool_input", {}).get("command", "")
-                       or body.get("tool_input", {}).get("path", ""),
+            or body.get("tool_input", {}).get("path", ""),
             "countdown_seconds": config.APPROVAL_TIMEOUT_S,
         }
 
@@ -141,7 +149,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=5)
+            urllib.request.urlopen(req, timeout=15)
         except Exception as e:
             print(f"[approval] K10 unreachable: {e}", flush=True)
             with _approval_lock:
@@ -151,7 +159,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         try:
             decision = response_q.get(timeout=config.APPROVAL_TIMEOUT_S)
-            behavior = "allow" if decision in ("allow", "always_allow") else "deny"
+            behavior = "allow" if decision in (
+                "allow", "always_allow") else "deny"
         except queue.Empty:
             behavior = "ask"
         finally:
@@ -174,11 +183,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
     def _handle_decision(self, body: dict):
         request_id = body.get("request_id", "")
-        decision   = body.get("decision", "deny")
+        decision = body.get("decision", "deny")
+        print(
+            f"[approval] decision received request_id={request_id} decision={decision}", flush=True)
         with _approval_lock:
             q = _pending_approvals.get(request_id)
         if q:
             q.put(decision)
+        else:
+            print(
+                f"[approval] no pending approval for request_id={request_id}", flush=True)
         self._respond(200, b"")
 
     def _respond(self, code: int, body: bytes):
@@ -234,7 +248,8 @@ _last_push_ts = 0.0
 def _broadcaster_loop():
     global _last_push_ts
     while True:
-        triggered = _broadcast_event.wait(timeout=config.BROADCASTER_DEBOUNCE_S)
+        triggered = _broadcast_event.wait(
+            timeout=config.BROADCASTER_DEBOUNCE_S)
         if triggered:
             _broadcast_event.clear()
 
@@ -259,13 +274,16 @@ def _broadcaster_loop():
 
         # Compute idle time from last tool use
         last_tool_ts = active_session.get("last_tool_ts", 0)
-        idle_minutes = (time.time() - last_tool_ts) / 60 if last_tool_ts else 999
+        idle_minutes = (time.time() - last_tool_ts) / \
+            60 if last_tool_ts else 999
 
         # Compute mood
-        mood_name, mood_score = mood_mod.compute_mood(st["tokens"], idle_minutes)
+        mood_name, mood_score = mood_mod.compute_mood(
+            st["tokens"], idle_minutes)
 
         # Update mood in state
-        state.update(lambda s: s.update({"mood": mood_name, "mood_score": mood_score}))
+        state.update(lambda s: s.update(
+            {"mood": mood_name, "mood_score": mood_score}))
 
         started_at = active_session.get("started_at", int(time.time()))
         duration_minutes = int((time.time() - started_at) / 60)
@@ -296,9 +314,11 @@ def _broadcaster_loop():
             )
             urllib.request.urlopen(req, timeout=8)
             _last_push_ts = time.time()
-            print(f"[broadcaster] pushed mood={mood_name} 5h={st.get('five_hour_pct', 0.0):.0%} week={st.get('weekly_pct', 0.0):.0%}", flush=True)
+            print(
+                f"[broadcaster] pushed mood={mood_name} 5h={st.get('five_hour_pct', 0.0):.0%} week={st.get('weekly_pct', 0.0):.0%}", flush=True)
         except Exception as e:
-            print(f"[broadcaster] push failed {config.K10_IP}:{config.K10_PORT}: {e}", flush=True)
+            print(
+                f"[broadcaster] push failed {config.K10_IP}:{config.K10_PORT}: {e}", flush=True)
 
 
 def main():
