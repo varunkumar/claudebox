@@ -16,17 +16,6 @@ def _get_np():
     if _np is None:
         from unihiker_k10 import rgb
         _np = rgb.my_rgb
-        # k10_base starts a timer that fires every ~100ms and causes ETIMEDOUT
-        # on TCP sockets. Kill it immediately after grabbing the NeoPixel ref.
-        try:
-            from machine import Timer
-            for i in range(4):
-                try:
-                    Timer(i).deinit()
-                except Exception:
-                    pass
-        except Exception:
-            pass
     return _np
 
 
@@ -45,6 +34,16 @@ def set_mood(mood: str):
         _current_mood = mood
         _beep()
     _fill(color)
+
+
+def flash_mood(mood: str, flashes=2, on_ms=120, off_ms=80):
+    color = _MOOD_COLORS.get(mood, _MOOD_COLORS["neutral"])
+    import time
+    for _ in range(max(1, int(flashes))):
+        _fill(color)
+        time.sleep_ms(max(1, int(on_ms)))
+        _fill((0, 0, 0))
+        time.sleep_ms(max(1, int(off_ms)))
 
 
 def _beep():

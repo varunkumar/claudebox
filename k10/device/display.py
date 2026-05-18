@@ -1,18 +1,10 @@
 import math
 import time
-import k10_base
 import config as _cfg
 
 _render_count = 0
 _HAS_SCREEN = False
 _screen = None
-
-try:
-    from unihiker_k10 import screen as _screen
-    _screen.init(dir=2)
-    _HAS_SCREEN = True
-except Exception:
-    pass
 
 _SPIKES = [
     (0, 20), (18, 14), (40, 18), (60, 11), (80, 19),
@@ -59,7 +51,28 @@ def _usage_color(pct):
 
 
 def render(state: dict):
-    global _render_count
+    global _render_count, _screen, _HAS_SCREEN
+    # Lazy-init screen on first render, then immediately kill k10_base timers
+    if not _HAS_SCREEN:
+        try:
+            from unihiker_k10 import screen as _scr
+            _scr.init(dir=2)
+            _screen = _scr
+            _HAS_SCREEN = True
+            print("[display] screen initialized lazily")
+            # Kill timers immediately after importing k10_base module
+            try:
+                from machine import Timer
+                for _i in range(4):
+                    try:
+                        Timer(_i).deinit()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[display] screen init failed: {e}")
+
     _render_count += 1
     print(
         f"[display] render start has_screen={_HAS_SCREEN} count={_render_count}")
@@ -87,7 +100,7 @@ def render(state: dict):
     _draw_spikes(cx=22, cy=22, color=0xFF6B35)
     _screen.draw_text(text="ClaudeBox", x=48, y=4,
                       font_size=24, color=0xFF6B35)
-    _screen.draw_text(text=f"{mood.upper()}  {dur}m",
+    _screen.draw_text(text=f"{mood}  {dur}m",
                       x=48, y=30, font_size=14, color=color)
     _screen.draw_text(text=hhmm, x=188, y=30, font_size=14, color=_DIM)
     _screen.draw_line(x0=0, y0=50, x1=240, y1=50, color=0x444444)
@@ -159,7 +172,11 @@ def render(state: dict):
     _screen.draw_text(text=env_str, x=8, y=294, font_size=10, color=_DIM)
 
     _screen.show_draw()
-    k10_base.lv.refr_now(None)  # force LVGL to flush to display
+    try:
+        import k10_base
+        k10_base.lv.refr_now(None)  # force LVGL to flush to display
+    except Exception:
+        pass
     print("[display] I done")
 
 
