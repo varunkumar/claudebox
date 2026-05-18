@@ -16,10 +16,24 @@ _state = {
 }
 
 _needs_render = False
+_approval_active = False
 _last_render_ts = 0
 _last_sensor_ts = 0
 _RENDER_MIN_INTERVAL = 4   # seconds
-_SENSOR_INTERVAL    = 30   # seconds
+_SENSOR_INTERVAL = 30   # seconds
+
+
+def _kill_k10_timers():
+    """Kill k10_base timers to prevent I2C contention."""
+    try:
+        from machine import Timer
+        for _i in range(4):
+            try:
+                Timer(_i).deinit()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def connect_wifi():
@@ -87,7 +101,7 @@ def send_response(conn, status, body=b""):
 
 
 def handle_request(conn):
-    global _needs_render
+    global _needs_render, _approval_active
     headers_raw, body_bytes = parse_request(conn)
     if not headers_raw:
         return
@@ -99,7 +113,8 @@ def handle_request(conn):
     method, path = parts[0], parts[1]
 
     if method == "GET" and path == "/sensors":
-        send_response(conn, "200 OK", json.dumps(_state["environment"]).encode())
+        send_response(conn, "200 OK", json.dumps(
+            _state["environment"]).encode())
 
     elif method == "POST" and path == "/update":
         try:
@@ -108,26 +123,40 @@ def handle_request(conn):
         except Exception:
             pass
         send_response(conn, "200 OK")
-        _needs_render = True
+        if not _approval_active:
+            _needs_render = True
 
     elif method == "POST" and path == "/approve":
         try:
             payload = json.loads(body_bytes)
         except Exception:
             payload = {}
+        print(f"[k10] /approve received tool={payload.get('tool', '?')}")
         send_response(conn, "200 OK")
+        _approval_active = True
         try:
             from approval import show_approval
+            print("[k10] calling show_approval")
             show_approval(payload, config.MAC_HOST, config.MAC_PORT)
+            print("[k10] show_approval returned")
         except Exception as e:
-            print(f"[k10] approval error: {e}")
+            import sys
+            sys.print_exception(e)
+        finally:
+            _approval_active = False
+            # Kill k10_base timers after approval completes
+            _kill_k10_timers()
+        _needs_render = True
 
     else:
         send_response(conn, "404 Not Found")
 
 
 def do_render():
-    global _last_render_ts, _needs_render
+    global _last_render_ts, _needs_render, _approval_active
+    # Skip rendering during approval to avoid I2C contention with button init
+    if _approval_active:
+        return
     now = time.time()
     if now - _last_render_ts < _RENDER_MIN_INTERVAL:
         _needs_render = True  # keep flag so we retry after interval passes
@@ -141,11 +170,6 @@ def do_render():
         render(_state)
     except Exception as e:
         print(f"[k10] render error: {e}")
-    try:
-        from rgb import set_mood
-        set_mood(_state["mood"])
-    except Exception as e:
-        print(f"[k10] mood error: {e}")
     gc.collect()
 
 
@@ -204,6 +228,8 @@ def boot():
         print("[k10] WiFi failed")
         return False
     print(f"[k10] WiFi connected, IP: {ip}")
+    # Keep k10_base timers off during normal dashboard runtime
+    _kill_k10_timers()
     start_server()
     return True
 
